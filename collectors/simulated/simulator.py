@@ -14,6 +14,7 @@ Standard library only; there is nothing to install.
 import argparse
 import math
 import random
+import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
@@ -29,6 +30,25 @@ def phase(period_s: float) -> float:
 def wave(period_s: float) -> float:
     """A sine between -1 and 1 over the given period."""
     return math.sin(2 * math.pi * (time.time() - START) / period_s)
+
+
+# Every metric the simulator emits: name -> (type, help).
+FAMILIES = {
+    "sim_db_up": ("gauge", "Whether the simulated database is accepting connections."),
+    "sim_db_sessions_active": ("gauge", "Sessions currently open."),
+    "sim_db_sessions_max": ("gauge", "Configured session limit."),
+    "sim_db_transactions_total": ("counter", "Transactions committed."),
+    "sim_db_tablespace_size_bytes": ("gauge", "Allocated size of each tablespace."),
+    "sim_db_tablespace_used_bytes": ("gauge", "Bytes in use in each tablespace."),
+    "sim_db_wait_seconds_total": ("counter", "Time sessions spent waiting, by wait class."),
+    "sim_device_uptime_seconds": ("gauge", "Seconds since the switch last booted."),
+    "sim_device_temperature_celsius": ("gauge", "Chassis temperature."),
+    "sim_if_admin_status": ("gauge", "Configured interface state: 1 enabled, 2 disabled."),
+    "sim_if_oper_status": ("gauge", "Actual interface state: 1 up, 2 down."),
+    "sim_if_in_octets_total": ("counter", "Bytes received on the interface."),
+    "sim_if_out_octets_total": ("counter", "Bytes sent on the interface."),
+    "sim_if_in_errors_total": ("counter", "Inbound packets discarded as errors."),
+}
 
 
 class Profile:
@@ -47,7 +67,17 @@ class Profile:
         with self.lock:
             now = time.time()
             dt, self.last = now - self.last, now
-            return "\n".join(self.lines(dt)) + "\n"
+            samples = self.lines(dt)
+        # The exposition format wants each family's samples together, under
+        # its HELP and TYPE, whatever order the profile produced them in.
+        grouped: dict[str, list[str]] = {}
+        for line in samples:
+            grouped.setdefault(re.split(r"[{ ]", line, maxsplit=1)[0], []).append(line)
+        out = []
+        for name, lines in grouped.items():
+            kind, text = FAMILIES[name]
+            out += [f"# HELP {name} {text}", f"# TYPE {name} {kind}", *lines]
+        return "\n".join(out) + "\n"
 
     def lines(self, dt: float) -> list[str]:
         raise NotImplementedError
@@ -88,16 +118,10 @@ class Database(Profile):
         hours = (time.time() - START) / 3600
 
         out = [
-            "# TYPE sim_db_up gauge",
             metric("sim_db_up", 1),
-            "# TYPE sim_db_sessions_active gauge",
             metric("sim_db_sessions_active", round(sessions)),
-            "# TYPE sim_db_sessions_max gauge",
             metric("sim_db_sessions_max", self.SESSIONS_MAX),
-            "# TYPE sim_db_transactions_total counter",
             metric("sim_db_transactions_total", self.advance(("tx",), tps, dt)),
-            "# TYPE sim_db_tablespace_size_bytes gauge",
-            "# TYPE sim_db_tablespace_used_bytes gauge",
         ]
         for name, (gib, used, drift) in self.TABLESPACES.items():
             size = gib * 2**30
@@ -105,7 +129,6 @@ class Database(Profile):
             out.append(metric("sim_db_tablespace_size_bytes", size, tablespace=name))
             out.append(metric("sim_db_tablespace_used_bytes", size * frac, tablespace=name))
 
-        out.append("# TYPE sim_db_wait_seconds_total counter")
         for wait_class, base in {"User I/O": 0.8, "Concurrency": 0.15, "Commit": 0.3, "Network": 0.05}.items():
             rate = base * (3 if surge and wait_class == "Concurrency" else 1) * (1 + 0.3 * wave(600))
             total = self.advance(("wait", wait_class), rate, dt)
@@ -134,15 +157,8 @@ class Switch(Profile):
 
     def lines(self, dt: float) -> list[str]:
         out = [
-            "# TYPE sim_device_uptime_seconds gauge",
             metric("sim_device_uptime_seconds", 86400 * 41 + time.time() - START),
-            "# TYPE sim_device_temperature_celsius gauge",
             metric("sim_device_temperature_celsius", 42 + 3 * wave(900) + random.uniform(-0.5, 0.5)),
-            "# TYPE sim_if_admin_status gauge",
-            "# TYPE sim_if_oper_status gauge",
-            "# TYPE sim_if_in_octets_total counter",
-            "# TYPE sim_if_out_octets_total counter",
-            "# TYPE sim_if_in_errors_total counter",
         ]
         for name, (desc, mbps) in self.PORTS.items():
             admin_up = name != "Gi1/0/8"

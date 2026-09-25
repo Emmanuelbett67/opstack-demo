@@ -1,0 +1,147 @@
+# Unit tests for rules/integrations.yml. Each alert gets a case that must fire
+# and a near-miss that must not, so a threshold edit that loosens or tightens
+# a rule fails here before it reaches a dashboard.
+
+rule_files:
+  - ../rules/integrations.yml
+
+evaluation_interval: 15s
+
+tests:
+  # --- linux -------------------------------------------------------------------
+
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_size_bytes{job="linux", instance="h1", mountpoint="/", fstype="ext4"}'
+        values: "100x10"
+      - series: 'node_filesystem_avail_bytes{job="linux", instance="h1", mountpoint="/", fstype="ext4"}'
+        values: "5x10"
+      # tmpfs is excluded however full it gets.
+      - series: 'node_filesystem_size_bytes{job="linux", instance="h1", mountpoint="/run", fstype="tmpfs"}'
+        values: "100x10"
+      - series: 'node_filesystem_avail_bytes{job="linux", instance="h1", mountpoint="/run", fstype="tmpfs"}'
+        values: "1x10"
+      # 85% full: close, but under the line.
+      - series: 'node_filesystem_size_bytes{job="linux", instance="h1", mountpoint="/data", fstype="xfs"}'
+        values: "100x10"
+      - series: 'node_filesystem_avail_bytes{job="linux", instance="h1", mountpoint="/data", fstype="xfs"}'
+        values: "15x10"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HostFilesystemNearlyFull
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: HostFilesystemNearlyFull
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: linux
+              instance: h1
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: "/ on h1 is over 90% full"
+
+  # --- database ----------------------------------------------------------------
+
+  - interval: 1m
+    input_series:
+      - series: 'sim_db_sessions_active{job="database", instance="db1"}'
+        values: "180x5"
+      - series: 'sim_db_sessions_max{job="database", instance="db1"}'
+        values: "200x5"
+      # 80% of the limit on a second instance: must stay quiet.
+      - series: 'sim_db_sessions_active{job="database", instance="db2"}'
+        values: "160x5"
+      - series: 'sim_db_sessions_max{job="database", instance="db2"}'
+        values: "200x5"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DatabaseSessionsNearLimit
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: DatabaseSessionsNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: database
+              instance: db1
+            exp_annotations:
+              summary: "db1 is using over 85% of its session limit"
+
+  - interval: 1m
+    input_series:
+      - series: 'sim_db_tablespace_used_bytes{job="database", instance="db1", tablespace="USERS"}'
+        values: "95x8"
+      - series: 'sim_db_tablespace_size_bytes{job="database", instance="db1", tablespace="USERS"}'
+        values: "100x8"
+      - series: 'sim_db_tablespace_used_bytes{job="database", instance="db1", tablespace="DATA"}'
+        values: "64x8"
+      - series: 'sim_db_tablespace_size_bytes{job="database", instance="db1", tablespace="DATA"}'
+        values: "100x8"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TablespaceNearlyFull
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: TablespaceNearlyFull
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: database
+              instance: db1
+              tablespace: USERS
+            exp_annotations:
+              summary: "Tablespace USERS on db1 is over 90% full"
+
+  # --- network -----------------------------------------------------------------
+
+  - interval: 1m
+    input_series:
+      # Enabled and down: a fault.
+      - series: 'sim_if_admin_status{job="network", instance="sw1", ifName="Gi1/0/5"}'
+        values: "1x4"
+      - series: 'sim_if_oper_status{job="network", instance="sw1", ifName="Gi1/0/5"}'
+        values: "2x4"
+      # Disabled on purpose and down: not a fault, must never alert.
+      - series: 'sim_if_admin_status{job="network", instance="sw1", ifName="Gi1/0/8"}'
+        values: "2x4"
+      - series: 'sim_if_oper_status{job="network", instance="sw1", ifName="Gi1/0/8"}'
+        values: "2x4"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: InterfaceDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: InterfaceDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: network
+              instance: sw1
+              ifName: Gi1/0/5
+            exp_annotations:
+              summary: "Gi1/0/5 on sw1 is enabled but down"
+
+  - interval: 1m
+    input_series:
+      # 120 errors a minute is 2/s, over the 1/s line.
+      - series: 'sim_if_in_errors_total{job="network", instance="sw1", ifName="Gi1/0/3"}'
+        values: "0+120x10"
+      # 30 a minute is 0.5/s: noisy but under it.
+      - series: 'sim_if_in_errors_total{job="network", instance="sw1", ifName="Gi1/0/4"}'
+        values: "0+30x10"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: InterfaceErrors
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: InterfaceErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: network
+              instance: sw1
+              ifName: Gi1/0/3
+            exp_annotations:
+              summary: "Gi1/0/3 on sw1 is logging input errors"

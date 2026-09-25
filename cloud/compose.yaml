@@ -4,6 +4,9 @@
 # evaluation, Grafana). This host only runs the estate: the simulators and
 # one Alloy that scrapes them, collects its own host metrics and logs, and
 # pushes everything out. It opens no inbound port.
+#
+# The simulators run the image CI built, signed and published from main, not
+# a local build, so what runs here is exactly what passed the checks.
 
 name: opstack-cloud
 
@@ -28,11 +31,11 @@ services:
     restart: unless-stopped
 
   database-sim:
-    build: ../collectors/simulated
+    image: ghcr.io/emmanuelbett67/opstack-demo-simulator:${SIMULATOR_TAG:-latest}
     command: ["--profile", "database"]
     restart: unless-stopped
 
   switch-sim:
-    build: ../collectors/simulated
+    image: ghcr.io/emmanuelbett67/opstack-demo-simulator:${SIMULATOR_TAG:-latest}
     command: ["--profile", "switch"]
     restart: unless-stopped

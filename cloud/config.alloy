@@ -10,77 +10,77 @@
 // ---- pull integrations -------------------------------------------------------
 
 prometheus.scrape "database" {
-  job_name   = "database"
-  targets    = [{"__address__" = "database-sim:9100", "instance" = "demo-db-01", "integration" = "database", "environment" = "demo"}]
-  forward_to = [prometheus.remote_write.cloud.receiver]
+	job_name   = "database"
+	targets    = [{"__address__" = "database-sim:9100", "instance" = "demo-db-01", "integration" = "database", "environment" = "demo"}]
+	forward_to = [prometheus.remote_write.cloud.receiver]
 }
 
 prometheus.scrape "network" {
-  job_name   = "network"
-  targets    = [{"__address__" = "switch-sim:9100", "instance" = "demo-sw-core-01", "integration" = "network", "environment" = "demo"}]
-  forward_to = [prometheus.remote_write.cloud.receiver]
+	job_name   = "network"
+	targets    = [{"__address__" = "switch-sim:9100", "instance" = "demo-sw-core-01", "integration" = "network", "environment" = "demo"}]
+	forward_to = [prometheus.remote_write.cloud.receiver]
 }
 
 // ---- this host ---------------------------------------------------------------
 
 prometheus.exporter.unix "host" {
-  procfs_path = "/host/proc"
-  sysfs_path  = "/host/sys"
-  rootfs_path = "/host/root"
+	procfs_path = "/host/proc"
+	sysfs_path  = "/host/sys"
+	rootfs_path = "/host/root"
 }
 
 discovery.relabel "host" {
-  targets = prometheus.exporter.unix.host.targets
+	targets = prometheus.exporter.unix.host.targets
 
-  rule {
-    target_label = "job"
-    replacement  = "linux"
-  }
+	rule {
+		target_label = "job"
+		replacement  = "linux"
+	}
 
-  rule {
-    target_label = "instance"
-    replacement  = constants.hostname
-  }
+	rule {
+		target_label = "instance"
+		replacement  = constants.hostname
+	}
 }
 
 prometheus.scrape "host" {
-  targets    = discovery.relabel.host.output
-  forward_to = [prometheus.remote_write.cloud.receiver]
+	targets    = discovery.relabel.host.output
+	forward_to = [prometheus.remote_write.cloud.receiver]
 }
 
 local.file_match "system" {
-  path_targets = [
-    {"__path__" = "/host/var/log/*.log", "job" = "linux", "instance" = constants.hostname},
-    {"__path__" = "/host/var/log/syslog", "job" = "linux", "instance" = constants.hostname},
-    {"__path__" = "/host/var/log/messages", "job" = "linux", "instance" = constants.hostname},
-  ]
+	path_targets = [
+		{"__path__" = "/host/var/log/*.log", "job" = "linux", "instance" = constants.hostname},
+		{"__path__" = "/host/var/log/syslog", "job" = "linux", "instance" = constants.hostname},
+		{"__path__" = "/host/var/log/messages", "job" = "linux", "instance" = constants.hostname},
+	]
 }
 
 loki.source.file "system" {
-  targets    = local.file_match.system.targets
-  forward_to = [loki.write.cloud.receiver]
+	targets    = local.file_match.system.targets
+	forward_to = [loki.write.cloud.receiver]
 }
 
 // ---- Grafana Cloud -----------------------------------------------------------
 
 prometheus.remote_write "cloud" {
-  endpoint {
-    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_PROM_URL")
 
-    basic_auth {
-      username = sys.env("GRAFANA_CLOUD_PROM_USER")
-      password = sys.env("GRAFANA_CLOUD_TOKEN")
-    }
-  }
+		basic_auth {
+			username = sys.env("GRAFANA_CLOUD_PROM_USER")
+			password = sys.env("GRAFANA_CLOUD_TOKEN")
+		}
+	}
 }
 
 loki.write "cloud" {
-  endpoint {
-    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_LOKI_URL")
 
-    basic_auth {
-      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
-      password = sys.env("GRAFANA_CLOUD_TOKEN")
-    }
-  }
+		basic_auth {
+			username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+			password = sys.env("GRAFANA_CLOUD_TOKEN")
+		}
+	}
 }

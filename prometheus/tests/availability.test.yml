@@ -1,0 +1,72 @@
+# Unit tests for rules/availability.yml. Run with: promtool test rules <file>
+# Only firing alerts are listed at each eval_time; an empty list asserts that
+# nothing is firing, which is how the "must stay quiet" cases are written.
+
+rule_files:
+  - ../rules/availability.yml
+
+evaluation_interval: 15s
+
+tests:
+  # A pull target that stops answering fires only after a full minute down.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="network", instance="demo-sw-core-01"}'
+        values: "1 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: network
+              instance: demo-sw-core-01
+            exp_annotations:
+              summary: "network target demo-sw-core-01 is not responding"
+
+  # A pushed `up` from a Linux collector is not a scrape result, so it must
+  # never raise TargetDown even when it reads zero.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="linux", instance="demo-linux-01"}'
+        values: "0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TargetDown
+        exp_alerts: []
+
+  # A collector that goes silent: reports for five minutes, then nothing.
+  # Nothing ever reads zero; the alert has to come from the gap alone.
+  - interval: 30s
+    input_series:
+      - series: 'node_uname_info{job="linux", instance="demo-linux-01"}'
+        values: "1x10 _x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: LinuxCollectorMissing
+        exp_alerts: []
+      # One minute after the last report: still within the two minute budget.
+      - eval_time: 6m
+        alertname: LinuxCollectorMissing
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LinuxCollectorMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: demo-linux-01
+            exp_annotations:
+              summary: "Linux host demo-linux-01 has not reported for over two minutes"
+
+  # A healthy collector reporting throughout stays quiet.
+  - interval: 30s
+    input_series:
+      - series: 'node_uname_info{job="linux", instance="demo-linux-01"}'
+        values: "1x30"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: LinuxCollectorMissing
+        exp_alerts: []

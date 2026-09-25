@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Config validation, alert rule unit tests, formatting, exposition
+      # linting and dashboard checks. The same script runs locally.
+      - run: sh scripts/check.sh
+
+  image:
+    # Only what reached main is published.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # Keyless signing: cosign exchanges the workflow's OIDC token for a
+      # short-lived certificate, so there is no signing key to store or leak.
+      id-token: write
+    env:
+      # Registry paths must be lowercase; the account name is not.
+      IMAGE: ghcr.io/emmanuelbett67/opstack-demo-simulator
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: collectors/simulated
+          # The always-on host may be an ARM VM, so both are built.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image by digest
+        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"

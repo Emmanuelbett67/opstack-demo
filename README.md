@@ -1,5 +1,7 @@
 # OpStack demo
 
+[![ci](https://github.com/Emmanuelbett67/opstack-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/Emmanuelbett67/opstack-demo/actions/workflows/ci.yml)
+
 A working reference for a pattern: monitoring a mixed estate from one central
 stack, where telemetry only ever flows **into** the centre. The central side
 receives, stores, graphs and alerts. It holds no credentials, SSH keys or
@@ -110,6 +112,27 @@ Start anything you stopped with `docker compose start <service>`.
 | `InterfaceDown` | An enabled interface is down for 1 minute |
 | `InterfaceErrors` | Input errors above 1/s for 2 minutes |
 
+## Checks and CI
+
+`scripts/check.sh` runs every check the repository has, using the same pinned
+images the stack runs, so it needs nothing but Docker. CI runs exactly this
+script on every push and pull request.
+
+- Prometheus config and rule syntax (`promtool check`)
+- **Alert rule unit tests** (`promtool test rules`, in `prometheus/tests/`).
+  Each alert has a case that must fire and a near miss that must not: the
+  collector that goes quiet, the disabled port that must never page, the
+  filesystem at 85% that is not yet a problem. Loosening a threshold fails
+  the build.
+- Alertmanager, Loki and Alloy configs, including `alloy fmt`
+- Simulator output linted as Prometheus exposition
+- Dashboards: valid JSON, known datasources, unique panel ids
+- Both compose files resolve
+
+On `main`, CI then builds the simulator image for amd64 and arm64, attaches
+an SBOM and build provenance, publishes it to GHCR, and signs it with cosign
+using the workflow's own identity. There is no signing key anywhere.
+
 ## Run it live on Grafana Cloud
 
 The `cloud/` folder runs the same demo against a Grafana Cloud free stack, so
@@ -126,8 +149,14 @@ no inbound port.
 
    ```sh
    cd cloud
-   docker compose up -d --build
+   docker compose up -d     # pulls the simulator image CI built and signed
    ./load-rules.sh          # uploads prometheus/rules/*.yml unchanged
+   ```
+
+   To confirm the image came from this repository's CI before running it:
+
+   ```sh
+   cosign verify ghcr.io/emmanuelbett67/opstack-demo-simulator:latest      --certificate-identity-regexp '^https://github.com/Emmanuelbett67/opstack-demo/'      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
 3. In Grafana Cloud, import `cloud/showcase.json` and pick the stack's
@@ -159,6 +188,9 @@ collectors/
   linux/config.alloy           host metrics + system logs, pushed
   simulated/                   stand-in database and switch exporters
 cloud/                         Grafana Cloud sender, rule upload, showcase
+prometheus/tests/              alert rule unit tests
+scripts/check.sh               every check, as CI runs it
+.github/workflows/ci.yml       checks, then build, publish and sign on main
 ```
 
 ## Adding an integration
