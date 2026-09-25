@@ -199,6 +199,8 @@ scripts/check.sh               every check, as CI runs it
 2. Add `prometheus/targets/<integration>.yml` and a matching job in
    `prometheus.yml`.
 3. Add a rule group in `prometheus/rules/` and a dashboard row.
+4. Add a case for each new alert to `prometheus/tests/`: one input that must
+   fire it and one near miss that must not. Run `sh scripts/check.sh`.
 
 No step touches another integration's files.
 
