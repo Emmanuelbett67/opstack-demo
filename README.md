@@ -127,6 +127,7 @@ script on every push and pull request.
 - Alertmanager, Loki and Alloy configs, including `alloy fmt`
 - Simulator output linted as Prometheus exposition
 - Dashboards: valid JSON, known datasources, unique panel ids
+- Terraform: `fmt -check` and `validate` against the locked provider
 - Both compose files resolve
 
 On `main`, CI then builds the simulator image for amd64 and arm64, attaches
@@ -156,12 +157,31 @@ no inbound port.
    To confirm the image came from this repository's CI before running it:
 
    ```sh
-   cosign verify ghcr.io/emmanuelbett67/opstack-demo-simulator:latest      --certificate-identity-regexp '^https://github.com/Emmanuelbett67/opstack-demo/'      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+   cosign verify ghcr.io/emmanuelbett67/opstack-demo-simulator:latest \
+     --certificate-identity-regexp '^https://github.com/Emmanuelbett67/opstack-demo/' \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
-3. In Grafana Cloud, import `cloud/showcase.json` and pick the stack's
-   Prometheus data source when asked.
-4. Open the dashboard, choose **Share > Share externally**, and enable it.
+3. Create the dashboard and its public link with Terraform. In Grafana, add a
+   service account (*Administration > Users and access > Service accounts*)
+   with the **Admin** role, which sharing a dashboard externally requires,
+   and create a token for it. Then, from any machine:
+
+   ```sh
+   cd terraform
+   export GRAFANA_AUTH=<service account token>   # never written to a file
+   terraform init
+   terraform apply        # set -var stack_slug=<your stack> if not the default
+   ```
+
+   This creates an *OpStack* folder, the showcase dashboard (bound to the
+   stack's Prometheus data source), and its public share, then prints the
+   public URL. The URL's token is pinned in `variables.tf`, so tearing the
+   share down and recreating it keeps the same link.
+
+   If you shared the dashboard by hand before adopting Terraform, revoke that
+   share first (*Share > Share externally > Revoke*). Grafana allows one
+   public share per dashboard, and Terraform recreates it with the same token.
 
 The showcase is one page on purpose. Externally shared dashboards cannot use
 template variables or follow links to other dashboards, and the Linux logs
@@ -188,6 +208,7 @@ collectors/
   linux/config.alloy           host metrics + system logs, pushed
   simulated/                   stand-in database and switch exporters
 cloud/                         Grafana Cloud sender, rule upload, showcase
+terraform/                     Grafana Cloud folder, dashboard, public share
 prometheus/tests/              alert rule unit tests
 scripts/check.sh               every check, as CI runs it
 .github/workflows/ci.yml       checks, then build, publish and sign on main

@@ -1,2 +1,8 @@
 .env
 __pycache__/
+
+# Terraform: provider cache and state stay local. The lock file is committed.
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars

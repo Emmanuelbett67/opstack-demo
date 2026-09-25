@@ -14,6 +14,7 @@ ALERTMANAGER=prom/alertmanager:v0.28.1
 LOKI=grafana/loki:3.5.0
 ALLOY=grafana/alloy:v1.10.0
 PYTHON=python:3.12-slim
+TERRAFORM=hashicorp/terraform:1.16.4
 
 step() { printf '\n==> %s\n' "$1"; }
 run() { docker run --rm -i -v "$root:/w:ro" -w /w "$@"; }
@@ -85,6 +86,18 @@ for path in sorted(pathlib.Path(".").glob("**/*.json")):
     print(f"ok  {path} ({len(ids)} panels)")
 sys.exit(failed)
 PY
+
+step "Terraform is formatted and valid"
+# validate needs the provider schema, so init runs first, without a backend
+# and into a throwaway directory so the working tree stays read-only.
+# cloud/ is copied alongside because the config reads cloud/showcase.json.
+docker run --rm -v "$root:/src:ro" --entrypoint sh "$TERRAFORM" -c '
+  set -e
+  mkdir /w && cp -r /src/terraform /src/cloud /w/ && cd /w/terraform
+  terraform fmt -check -diff
+  terraform init -backend=false -input=false -lockfile=readonly >/dev/null
+  terraform validate
+'
 
 step "Compose files resolve"
 docker compose -f compose.yaml config -q && echo "ok  compose.yaml"
