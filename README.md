@@ -110,6 +110,38 @@ Start anything you stopped with `docker compose start <service>`.
 | `InterfaceDown` | An enabled interface is down for 1 minute |
 | `InterfaceErrors` | Input errors above 1/s for 2 minutes |
 
+## Run it live on Grafana Cloud
+
+The `cloud/` folder runs the same demo against a Grafana Cloud free stack, so
+the dashboard can be shared as a public link. Grafana Cloud takes the place
+of the central stack; one always-on Linux machine runs the simulators and a
+single Alloy that scrapes them and pushes everything out. That machine opens
+no inbound port.
+
+1. Create a free Grafana Cloud stack. From its Prometheus and Loki *Details*
+   pages, copy the endpoints and user IDs into `cloud/.env` (start from
+   `cloud/.env.example`). Create an access policy token with
+   `metrics:write`, `logs:write`, `rules:read` and `rules:write` only.
+2. On the always-on machine:
+
+   ```sh
+   cd cloud
+   docker compose up -d --build
+   ./load-rules.sh          # uploads prometheus/rules/*.yml unchanged
+   ```
+
+3. In Grafana Cloud, import `cloud/showcase.json` and pick the stack's
+   Prometheus data source when asked.
+4. Open the dashboard, choose **Share > Share externally**, and enable it.
+
+The showcase is one page on purpose. Externally shared dashboards cannot use
+template variables or follow links to other dashboards, and the Linux logs
+panel is left out so the host's syslog is never public.
+
+The same labels are used in both setups, so every dashboard query and alert
+rule works unchanged. The whole demo is about 1,500 active series, well
+inside the free tier.
+
 ## Layout
 
 ```text
@@ -126,6 +158,7 @@ grafana/
 collectors/
   linux/config.alloy           host metrics + system logs, pushed
   simulated/                   stand-in database and switch exporters
+cloud/                         Grafana Cloud sender, rule upload, showcase
 ```
 
 ## Adding an integration

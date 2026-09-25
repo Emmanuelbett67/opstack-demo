@@ -1,0 +1,38 @@
+# Always-on sender for the Grafana Cloud version of the demo.
+#
+# Grafana Cloud stands in for the central stack (Prometheus, Loki, alert
+# evaluation, Grafana). This host only runs the estate: the simulators and
+# one Alloy that scrapes them, collects its own host metrics and logs, and
+# pushes everything out. It opens no inbound port.
+
+name: opstack-cloud
+
+services:
+  alloy:
+    image: grafana/alloy:v1.10.0
+    hostname: ${HOST_NAME:-demo-linux-01}
+    command:
+      - run
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    env_file: .env
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+      - /var/log:/host/var/log:ro
+    depends_on:
+      - database-sim
+      - switch-sim
+    restart: unless-stopped
+
+  database-sim:
+    build: ../collectors/simulated
+    command: ["--profile", "database"]
+    restart: unless-stopped
+
+  switch-sim:
+    build: ../collectors/simulated
+    command: ["--profile", "switch"]
+    restart: unless-stopped
