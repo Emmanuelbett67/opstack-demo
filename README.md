@@ -179,9 +179,18 @@ no inbound port.
    public URL. The URL's token is pinned in `variables.tf`, so tearing the
    share down and recreating it keeps the same link.
 
-   If you shared the dashboard by hand before adopting Terraform, revoke that
-   share first (*Share > Share externally > Revoke*). Grafana allows one
-   public share per dashboard, and Terraform recreates it with the same token.
+   If you shared the dashboard by hand before adopting Terraform, import that
+   share instead of recreating it, so the link never goes down. Grafana allows
+   one public share per dashboard, and its id is not the token in the URL:
+
+   ```sh
+   curl -s -H "Authorization: Bearer $GRAFANA_AUTH"      https://<stack>.grafana.net/api/dashboards/uid/opstack-showcase/public-dashboards
+   terraform import grafana_dashboard_public.showcase opstack-showcase:<uid from above>
+   terraform apply
+   ```
+
+   State is kept locally in `terraform/terraform.tfstate` (gitignored). If it
+   is lost, the same imports rebuild it; nothing in Grafana has to change.
 
 The showcase is one page on purpose. Externally shared dashboards cannot use
 template variables or follow links to other dashboards, and the Linux logs
