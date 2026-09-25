@@ -63,7 +63,7 @@ jobs:
           sbom: true
           provenance: mode=max
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign the image by digest
         run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
