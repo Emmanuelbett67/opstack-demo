@@ -1,0 +1,26 @@
+groups:
+  - name: availability
+    rules:
+      # Pull-based targets: Prometheus tried to scrape and could not. Linux
+      # collectors are excluded because their `up` is pushed, and a stopped
+      # collector leaves it stale rather than zero; the rule below covers them.
+      - alert: TargetDown
+        expr: up{job!="linux"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target {{ $labels.instance }} is not responding"
+
+      # Push-based collectors never produce up == 0; they just go quiet. This
+      # looks at when each host last reported, so silence raises an alert
+      # instead of reading as health.
+      - alert: LinuxCollectorMissing
+        expr: |
+          time() - max by (instance) (
+            max_over_time(timestamp(node_uname_info{job="linux"})[30m:30s])
+          ) > 120
+        labels:
+          severity: critical
+        annotations:
+          summary: "Linux host {{ $labels.instance }} has not reported for over two minutes"

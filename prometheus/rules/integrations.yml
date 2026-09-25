@@ -1,0 +1,49 @@
+groups:
+  - name: linux
+    rules:
+      - alert: HostFilesystemNearlyFull
+        expr: |
+          1 - node_filesystem_avail_bytes{job="linux", fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{job="linux", fstype!~"tmpfs|overlay|squashfs"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.mountpoint }} on {{ $labels.instance }} is over 90% full"
+
+  - name: database
+    rules:
+      - alert: DatabaseSessionsNearLimit
+        expr: sim_db_sessions_active / sim_db_sessions_max > 0.85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} is using over 85% of its session limit"
+
+      - alert: TablespaceNearlyFull
+        expr: sim_db_tablespace_used_bytes / sim_db_tablespace_size_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tablespace {{ $labels.tablespace }} on {{ $labels.instance }} is over 90% full"
+
+  - name: network
+    rules:
+      - alert: InterfaceDown
+        # Only interfaces an administrator has enabled; a disabled port is not a fault.
+        expr: sim_if_admin_status == 1 and sim_if_oper_status == 2
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.instance }} is enabled but down"
+
+      - alert: InterfaceErrors
+        expr: rate(sim_if_in_errors_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.instance }} is logging input errors"

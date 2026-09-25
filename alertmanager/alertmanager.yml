@@ -1,0 +1,12 @@
+# Alerts are grouped and held here, but routed nowhere. Adding an email,
+# Slack or Teams receiver is a deliberate step for whoever owns the on-call
+# rota, not a default.
+route:
+  receiver: hold
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: hold

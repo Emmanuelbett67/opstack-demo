@@ -1,0 +1,5 @@
+- targets: ["database-sim:9100"]
+  labels:
+    instance: demo-db-01
+    integration: database
+    environment: demo

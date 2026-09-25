@@ -1,0 +1,60 @@
+// Linux host collector.
+//
+// Runs on the host it watches and pushes to the central stack. It needs the
+// central endpoints and nothing else: no inbound port, no credentials for the
+// centre to use against the host.
+
+// ---- metrics -----------------------------------------------------------------
+
+prometheus.exporter.unix "host" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+}
+
+discovery.relabel "host" {
+  targets = prometheus.exporter.unix.host.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "linux"
+  }
+
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "host" {
+  targets         = discovery.relabel.host.output
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.remote_write "central" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// ---- logs --------------------------------------------------------------------
+
+local.file_match "system" {
+  path_targets = [
+    {"__path__" = "/host/var/log/*.log", "job" = "linux", "instance" = constants.hostname},
+    {"__path__" = "/host/var/log/syslog", "job" = "linux", "instance" = constants.hostname},
+    {"__path__" = "/host/var/log/messages", "job" = "linux", "instance" = constants.hostname},
+  ]
+}
+
+loki.source.file "system" {
+  targets    = local.file_match.system.targets
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

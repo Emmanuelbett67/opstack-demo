@@ -1,0 +1,5 @@
+- targets: ["switch-sim:9100"]
+  labels:
+    instance: demo-sw-core-01
+    integration: network
+    environment: demo
